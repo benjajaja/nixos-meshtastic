@@ -184,7 +184,9 @@ in {
         description = "Meshtasticd daemon user";
         isSystemUser = true;
         inherit (cfg) group;
-        extraGroups = with config.users.groups; [ spi.name gpio.name ];
+        extraGroups =
+          lib.optional (config.users.groups ? spi) "spi" ++
+          lib.optional (config.users.groups ? gpio) "gpio";
       };
     };
 
@@ -194,7 +196,7 @@ in {
 
     networking.firewall.allowedTCPPorts = mkIf cfg.openFirewall ([
       cfg.apiPort
-    ] ++ lib.optional (cfg.config.Webserver ? Port) cfg.config.Webserver.Port);
+    ] ++ lib.optional (cfg.settings.Webserver ? Port) cfg.settings.Webserver.Port);
 
     services.avahi.extraServiceFiles.meshtasticd = lib.mkIf cfg.enableAutodiscovery ''
       <?xml version="1.0" standalone='no'?><!--*-nxml-*-->

@@ -2,7 +2,10 @@
   description = "Meshtastic (native) for NixOS";
 
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-24.11";
+    # Pinned to this commit for scons 4.5.2, which matches the version
+    # in the bundled pio.tar (metadata shows 4.40502.0 = scons 4.5.2).
+    # This allows replacing the scons executable without version spoofing.
+    nixpkgs.url = "github:nixos/nixpkgs/b60793b86201040d9dee019a05089a9150d08b5b";
   };
 
   outputs = { self, nixpkgs }@inputs: let
