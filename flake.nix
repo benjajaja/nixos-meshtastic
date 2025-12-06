@@ -22,6 +22,7 @@
           nil # lsp language server for nix
           nixpkgs-fmt
           nix-output-monitor
+          platformio-core
         ];
       };
     });
