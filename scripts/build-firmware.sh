@@ -1,23 +1,49 @@
 #!/usr/bin/env bash
-# Build custom Meshtastic firmware with patches
+# Build custom Meshtastic firmware for Seeed XIAO S3 with:
+# - Custom hardware model (RESERVED_FRIED_CHICKEN / Muzi Base)
+# - Battery sensing on GPIO2 (for solar-battery combos)
+# - ESP32 internal temperature sensor
 #
 # Usage:
-#   ./scripts/build-firmware.sh seeed-xiao-s3
-#   ./scripts/build-firmware.sh seeed-xiao-s3 RESERVED_FRIED_CHICKEN
+#   ./scripts/build-firmware.sh
+#   ./scripts/build-firmware.sh --clean   # Force clean rebuild
+#
+# Hardware setup for battery sensing (6V max battery):
+#   Battery+ ──[100kΩ]──┬──[100kΩ]── GND
+#                       │
+#                    GPIO2 (A1 pad on XIAO)
 #
 # This script requires network access to download PlatformIO dependencies.
-# It's meant to be run outside of Nix sandbox.
 
 set -euo pipefail
 
-BOARD="${1:-seeed-xiao-s3}"
-HARDWARE_MODEL="${2:-}"
+BOARD="seeed-xiao-s3"
+HARDWARE_MODEL="RESERVED_FRIED_CHICKEN"
+BATTERY_PIN="2"
+ADC_MULTIPLIER="2.0"
 VERSION="2.7.15.567b8ea"
+CLEAN=false
 
-echo "=== Meshtastic Firmware Builder ==="
+# Parse arguments
+for arg in "$@"; do
+  case "$arg" in
+    --clean)
+      CLEAN=true
+      ;;
+    --help|-h)
+      echo "Usage: $0 [--clean]"
+      echo "  --clean   Force clean rebuild"
+      exit 0
+      ;;
+  esac
+done
+
+echo "=== Custom Meshtastic Firmware Builder ==="
 echo "Board: $BOARD"
 echo "Version: $VERSION"
-[ -n "$HARDWARE_MODEL" ] && echo "Custom Hardware Model: $HARDWARE_MODEL"
+echo "Hardware Model: $HARDWARE_MODEL (Muzi Base)"
+echo "Battery Pin: GPIO$BATTERY_PIN (ADC multiplier: $ADC_MULTIPLIER)"
+echo "Internal Temp: Enabled"
 echo ""
 
 # Create build directory
@@ -25,57 +51,138 @@ BUILD_DIR="${BUILD_DIR:-/tmp/meshtastic-build}"
 mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR"
 
+# Clean if requested
+if [ "$CLEAN" = true ] && [ -d "firmware-$VERSION" ]; then
+  echo "Cleaning previous build..."
+  rm -rf "firmware-$VERSION"
+fi
+
 # Download source if not present
 if [ ! -d "firmware-$VERSION" ]; then
   echo "Downloading firmware source..."
   curl -L "https://github.com/meshtastic/firmware/archive/refs/tags/v$VERSION.tar.gz" | tar xz
-  mv "firmware-$VERSION" "firmware-$VERSION" 2>/dev/null || true
 fi
 
 cd "firmware-$VERSION"
 
-# Apply hardware model patch if specified
-if [ -n "$HARDWARE_MODEL" ]; then
-  echo "Patching hardware model..."
-
-  # Backup original
-  cp src/platform/esp32/architecture.h src/platform/esp32/architecture.h.orig
-
-  # Find the board's current hardware model and replace it
-  case "$BOARD" in
-    *seeed-xiao-s3*|*seeed_xiao_s3*)
-      sed -i "s/meshtastic_HardwareModel_SEEED_XIAO_S3/meshtastic_HardwareModel_$HARDWARE_MODEL/g" \
-        src/platform/esp32/architecture.h
-      ;;
-    *heltec-v3*|*heltec_v3*)
-      sed -i "s/meshtastic_HardwareModel_HELTEC_V3/meshtastic_HardwareModel_$HARDWARE_MODEL/g" \
-        src/platform/esp32/architecture.h
-      ;;
-    *t-deck*|*t_deck*)
-      sed -i "s/meshtastic_HardwareModel_T_DECK/meshtastic_HardwareModel_$HARDWARE_MODEL/g" \
-        src/platform/esp32/architecture.h
-      ;;
-    *)
-      echo "Warning: Unknown board pattern, attempting generic replacement"
-      UPPER_BOARD=$(echo "$BOARD" | tr '[:lower:]-' '[:upper:]_')
-      sed -i "s/meshtastic_HardwareModel_$UPPER_BOARD/meshtastic_HardwareModel_$HARDWARE_MODEL/g" \
-        src/platform/esp32/architecture.h
-      ;;
-  esac
-
-  echo "Patched. Diff:"
-  diff src/platform/esp32/architecture.h.orig src/platform/esp32/architecture.h || true
+# Find variant directory
+VARIANT_DIR="variants/esp32s3/seeed_xiao_s3"
+if [ ! -d "$VARIANT_DIR" ]; then
+  echo "Error: Could not find variant directory: $VARIANT_DIR"
+  exit 1
 fi
+
+echo "Variant directory: $VARIANT_DIR"
+
+# ============================================
+# PATCH 1: Battery sensing on GPIO2
+# ============================================
+echo ""
+echo "Applying patch: Battery sensing on GPIO$BATTERY_PIN..."
+
+cat > "$VARIANT_DIR/variant.h.patch" << 'VARIANT_PATCH'
+--- a/variant.h
++++ b/variant.h
+@@ -1,3 +1,6 @@
++// Custom build: Battery sensing enabled
++#define HAS_INTERNAL_TEMP_SENSOR 1
++
+ /*
+  ▄▄▄▄▄▄▄▄▄▄▄  ▄▄▄▄▄▄▄▄▄▄▄  ▄▄▄▄▄▄▄▄▄▄▄  ▄▄▄▄▄▄▄▄▄▄▄  ▄▄▄▄▄▄▄▄▄▄
+ ▐░░░░░░░░░░░▌▐░░░░░░░░░░░▌▐░░░░░░░░░░░▌▐░░░░░░░░░░░▌▐░░░░░░░░░░▌
+VARIANT_PATCH
+
+# Apply battery pin changes
+sed -i "s/#define BATTERY_PIN -1/#define BATTERY_PIN $BATTERY_PIN/" "$VARIANT_DIR/variant.h"
+sed -i "s/#define ADC_CHANNEL ADC1_GPIO1_CHANNEL/#define ADC_CHANNEL ADC1_GPIO${BATTERY_PIN}_CHANNEL/" "$VARIANT_DIR/variant.h"
+
+# Add ADC_MULTIPLIER after BATTERY_SENSE_RESOLUTION_BITS
+if ! grep -q "#define ADC_MULTIPLIER" "$VARIANT_DIR/variant.h"; then
+  sed -i "/#define BATTERY_SENSE_RESOLUTION_BITS/a #define ADC_MULTIPLIER $ADC_MULTIPLIER" "$VARIANT_DIR/variant.h"
+fi
+
+# Add internal temp sensor flag at the top
+if ! grep -q "HAS_INTERNAL_TEMP_SENSOR" "$VARIANT_DIR/variant.h"; then
+  sed -i '1i // Custom build with internal temp sensor\n#define HAS_INTERNAL_TEMP_SENSOR 1\n' "$VARIANT_DIR/variant.h"
+fi
+
+echo "Battery sensing configured:"
+grep -E "BATTERY_PIN|ADC_CHANNEL|ADC_MULTIPLIER" "$VARIANT_DIR/variant.h"
+
+# ============================================
+# PATCH 2: Hardware model to FRIED_CHICKEN
+# ============================================
+echo ""
+echo "Applying patch: Hardware model -> $HARDWARE_MODEL..."
+
+sed -i "s/meshtastic_HardwareModel_SEEED_XIAO_S3/meshtastic_HardwareModel_$HARDWARE_MODEL/g" \
+  src/platform/esp32/architecture.h
+
+echo "Hardware model patched"
+
+# ============================================
+# PATCH 3: Internal temperature sensor
+# ============================================
+echo ""
+echo "Applying patch: Internal temperature sensor..."
+
+# Create the internal temp sensor patch for EnvironmentTelemetry.cpp
+# Add internal temp reading as fallback when no external temp sensor
+ENVTEL_FILE="src/modules/Telemetry/EnvironmentTelemetry.cpp"
+
+# Add internal temp helper function after includes
+if ! grep -q "getInternalTemperature" "$ENVTEL_FILE"; then
+  sed -i '/#include "configuration.h"/a \
+\
+#if defined(ARCH_ESP32) && defined(HAS_INTERNAL_TEMP_SENSOR)\
+// Use Arduino-ESP32 temperatureRead() - declared in esp32-hal.h via Arduino.h\
+static float getInternalTemperature() {\
+    float temp = temperatureRead();\
+    // temperatureRead returns 128.0 or 53.33 as invalid on some chips\
+    if (temp > 80.0 || temp < -20.0) {\
+        return 0;\
+    }\
+    return temp;\
+}\
+#endif' "$ENVTEL_FILE"
+fi
+
+# Add internal temp fallback in getEnvironmentTelemetry function
+# Find the line "return valid && hasSensor;" and add internal temp before it
+if ! grep -q "Using ESP32 internal temp" "$ENVTEL_FILE"; then
+  sed -i '/return valid && hasSensor;/i \
+\
+#if defined(ARCH_ESP32) && defined(HAS_INTERNAL_TEMP_SENSOR)\
+    // Fallback to internal temperature sensor if no external temp sensor\
+    if (!m->variant.environment_metrics.has_temperature) {\
+        float internalTemp = getInternalTemperature();\
+        if (internalTemp != 0) {\
+            m->variant.environment_metrics.has_temperature = true;\
+            m->variant.environment_metrics.temperature = internalTemp;\
+            hasSensor = true;\
+            LOG_INFO("Using ESP32 internal temp sensor: %.1f C", internalTemp);\
+        }\
+    }\
+#endif\
+' "$ENVTEL_FILE"
+fi
+
+echo "Internal temperature sensor patched"
+
+# ============================================
+# BUILD
+# ============================================
 
 # Check if platformio is available
 if ! command -v pio &> /dev/null; then
+  echo ""
   echo "Error: PlatformIO not found. Install with: pip install platformio"
   echo "Or enter nix develop shell: nix develop"
   exit 1
 fi
 
 echo ""
-echo "Building firmware for $BOARD..."
+echo "Building firmware..."
 echo "This will download PlatformIO dependencies (requires network access)"
 echo ""
 
@@ -83,18 +190,29 @@ pio run -e "$BOARD"
 
 echo ""
 echo "=== Build Complete ==="
-echo ""
-echo "Firmware files:"
-ls -la .pio/build/"$BOARD"/*.bin 2>/dev/null || echo "No .bin files found"
 
 OUTPUT_DIR="$BUILD_DIR/output-$BOARD"
 mkdir -p "$OUTPUT_DIR"
 cp .pio/build/"$BOARD"/*.bin "$OUTPUT_DIR/" 2>/dev/null || true
 cp .pio/build/"$BOARD"/*.elf "$OUTPUT_DIR/" 2>/dev/null || true
+cp "$VARIANT_DIR/variant.h" "$OUTPUT_DIR/variant.h.patched"
 
 echo ""
-echo "Copied to: $OUTPUT_DIR"
+echo "Firmware files:"
+ls -la "$OUTPUT_DIR"/*.bin 2>/dev/null
+
 echo ""
-echo "To flash, use:"
-echo "  esptool.py --port /dev/ttyACM0 erase_flash"
-echo "  esptool.py --port /dev/ttyACM0 write_flash 0x0 $OUTPUT_DIR/firmware.bin"
+echo "=== Flash Instructions ==="
+echo ""
+echo "1. Put device in bootloader mode:"
+echo "   - Hold BOOT button"
+echo "   - Press RESET (or replug USB)"
+echo "   - Release BOOT"
+echo ""
+echo "2. Flash:"
+echo "   esptool.py --port /dev/ttyACM0 write_flash 0x0 $OUTPUT_DIR/firmware.factory.bin"
+echo ""
+echo "=== Features Enabled ==="
+echo "- Hardware ID: Muzi Base ($HARDWARE_MODEL)"
+echo "- Battery sensing: GPIO$BATTERY_PIN (wire 100k+100k divider from battery)"
+echo "- Internal temp: ESP32 chip temperature as environment sensor"

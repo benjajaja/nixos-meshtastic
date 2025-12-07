@@ -1,5 +1,5 @@
 {
-  description = "Meshtastic (native) for NixOS";
+  description = "Meshtastic for NixOS - native daemon and firmware flashing";
 
   inputs = {
     # Pinned to this commit for scons 4.5.2, which matches the version
@@ -23,6 +23,7 @@
           nixpkgs-fmt
           nix-output-monitor
           platformio-core
+          esptool  # for flashing firmware
         ];
       };
     });
@@ -48,6 +49,24 @@
 
       libyaml-cpp = pkgs.callPackage ./pkgs/libyaml-cpp.nix {};
       ulfius = pkgs.callPackage ./pkgs/ulfius.nix {};
+
+      # Pre-built firmware for all supported platforms
+      meshtastic-firmware = pkgs.callPackage ./pkgs/meshtastic-firmware.nix {};
+
+      # Flash tool for ESP32-based devices
+      meshtastic-flash = pkgs.callPackage ./pkgs/meshtastic-flash.nix {
+        inherit (self.packages.${system}) meshtastic-firmware;
+      };
+
+      # Custom firmware builder - build from source with patches
+      # Usage: nix build .#meshtastic-firmware-custom.override { board = "seeed-xiao-s3"; hardwareModel = "RESERVED_FRIED_CHICKEN"; }
+      meshtastic-firmware-custom = pkgs.callPackage ./pkgs/meshtastic-firmware-custom.nix {};
+
+      # Example: seeed-xiao-s3 with FRIED_CHICKEN hardware ID
+      firmware-seeed-xiao-s3-fried-chicken = pkgs.callPackage ./pkgs/meshtastic-firmware-custom.nix {
+        board = "seeed-xiao-s3";
+        hardwareModel = "RESERVED_FRIED_CHICKEN";
+      };
 
     });
 
