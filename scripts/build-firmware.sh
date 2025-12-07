@@ -121,7 +121,20 @@ sed -i "s/meshtastic_HardwareModel_SEEED_XIAO_S3/meshtastic_HardwareModel_$HARDW
 echo "Hardware model patched"
 
 # ============================================
-# PATCH 3: Internal temperature sensor
+# PATCH 3: Firmware Edition -> DIY_EDITION
+# ============================================
+echo ""
+echo "Applying patch: Firmware edition -> DIY_EDITION..."
+
+# Add define to variant.h
+if ! grep -q "USERPREFS_FIRMWARE_EDITION" "$VARIANT_DIR/variant.h"; then
+  sed -i '1i #define USERPREFS_FIRMWARE_EDITION meshtastic_FirmwareEdition_DIY_EDITION' "$VARIANT_DIR/variant.h"
+fi
+
+echo "Firmware edition patched"
+
+# ============================================
+# PATCH 4: Internal temperature sensor
 # ============================================
 echo ""
 echo "Applying patch: Internal temperature sensor..."
@@ -214,5 +227,6 @@ echo "   esptool.py --port /dev/ttyACM0 write_flash 0x0 $OUTPUT_DIR/firmware.fac
 echo ""
 echo "=== Features Enabled ==="
 echo "- Hardware ID: Muzi Base ($HARDWARE_MODEL)"
+echo "- Firmware Edition: DIY_EDITION"
 echo "- Battery sensing: GPIO$BATTERY_PIN (wire 100k+100k divider from battery)"
 echo "- Internal temp: ESP32 chip temperature as environment sensor"
