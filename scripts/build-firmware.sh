@@ -80,18 +80,6 @@ echo "Variant directory: $VARIANT_DIR"
 echo ""
 echo "Applying patch: Battery sensing on GPIO$BATTERY_PIN..."
 
-cat > "$VARIANT_DIR/variant.h.patch" << 'VARIANT_PATCH'
---- a/variant.h
-+++ b/variant.h
-@@ -1,3 +1,6 @@
-+// Custom build: Battery sensing enabled
-+#define HAS_INTERNAL_TEMP_SENSOR 1
-+
- /*
-  ▄▄▄▄▄▄▄▄▄▄▄  ▄▄▄▄▄▄▄▄▄▄▄  ▄▄▄▄▄▄▄▄▄▄▄  ▄▄▄▄▄▄▄▄▄▄▄  ▄▄▄▄▄▄▄▄▄▄
- ▐░░░░░░░░░░░▌▐░░░░░░░░░░░▌▐░░░░░░░░░░░▌▐░░░░░░░░░░░▌▐░░░░░░░░░░▌
-VARIANT_PATCH
-
 # Apply battery pin changes
 sed -i "s/#define BATTERY_PIN -1/#define BATTERY_PIN $BATTERY_PIN/" "$VARIANT_DIR/variant.h"
 sed -i "s/#define ADC_CHANNEL ADC1_GPIO1_CHANNEL/#define ADC_CHANNEL ADC1_GPIO${BATTERY_PIN}_CHANNEL/" "$VARIANT_DIR/variant.h"
@@ -99,11 +87,6 @@ sed -i "s/#define ADC_CHANNEL ADC1_GPIO1_CHANNEL/#define ADC_CHANNEL ADC1_GPIO${
 # Add ADC_MULTIPLIER after BATTERY_SENSE_RESOLUTION_BITS
 if ! grep -q "#define ADC_MULTIPLIER" "$VARIANT_DIR/variant.h"; then
   sed -i "/#define BATTERY_SENSE_RESOLUTION_BITS/a #define ADC_MULTIPLIER $ADC_MULTIPLIER" "$VARIANT_DIR/variant.h"
-fi
-
-# Add internal temp sensor flag at the top
-if ! grep -q "HAS_INTERNAL_TEMP_SENSOR" "$VARIANT_DIR/variant.h"; then
-  sed -i '1i // Custom build with internal temp sensor\n#define HAS_INTERNAL_TEMP_SENSOR 1\n' "$VARIANT_DIR/variant.h"
 fi
 
 echo "Battery sensing configured:"
@@ -136,48 +119,19 @@ echo "Firmware edition patched"
 # ============================================
 # PATCH 4: Internal temperature sensor
 # ============================================
-echo ""
 echo "Applying patch: Internal temperature sensor..."
 
-# Create the internal temp sensor patch for EnvironmentTelemetry.cpp
-# Add internal temp reading as fallback when no external temp sensor
 ENVTEL_FILE="src/modules/Telemetry/EnvironmentTelemetry.cpp"
 
-# Add internal temp helper function after includes
-if ! grep -q "getInternalTemperature" "$ENVTEL_FILE"; then
-  sed -i '/#include "configuration.h"/a \
-\
-#if defined(ARCH_ESP32) && defined(HAS_INTERNAL_TEMP_SENSOR)\
-// Use Arduino-ESP32 temperatureRead() - declared in esp32-hal.h via Arduino.h\
-static float getInternalTemperature() {\
-    float temp = temperatureRead();\
-    // temperatureRead returns 128.0 or 53.33 as invalid on some chips\
-    if (temp > 80.0 || temp < -20.0) {\
-        return 0;\
-    }\
-    return temp;\
-}\
-#endif' "$ENVTEL_FILE"
-fi
-
-# Add internal temp fallback in getEnvironmentTelemetry function
-# Find the line "return valid && hasSensor;" and add internal temp before it
-if ! grep -q "Using ESP32 internal temp" "$ENVTEL_FILE"; then
+if ! grep -q "temperatureRead" "$ENVTEL_FILE"; then
   sed -i '/return valid && hasSensor;/i \
-\
-#if defined(ARCH_ESP32) && defined(HAS_INTERNAL_TEMP_SENSOR)\
-    // Fallback to internal temperature sensor if no external temp sensor\
+#ifdef ARDUINO_ARCH_ESP32\
     if (!m->variant.environment_metrics.has_temperature) {\
-        float internalTemp = getInternalTemperature();\
-        if (internalTemp != 0) {\
-            m->variant.environment_metrics.has_temperature = true;\
-            m->variant.environment_metrics.temperature = internalTemp;\
-            hasSensor = true;\
-            LOG_INFO("Using ESP32 internal temp sensor: %.1f C", internalTemp);\
-        }\
+        m->variant.environment_metrics.has_temperature = true;\
+        m->variant.environment_metrics.temperature = temperatureRead();\
+        hasSensor = true;\
     }\
-#endif\
-' "$ENVTEL_FILE"
+#endif' "$ENVTEL_FILE"
 fi
 
 echo "Internal temperature sensor patched"
