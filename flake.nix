@@ -24,6 +24,10 @@
           nix-output-monitor
           platformio-core
           esptool  # for flashing firmware
+          python3
+          python3Packages.pip
+          python3Packages.setuptools
+          python3Packages.wheel
         ];
       };
     });

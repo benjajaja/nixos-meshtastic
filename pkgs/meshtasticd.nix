@@ -25,10 +25,10 @@
 
 stdenv.mkDerivation (finalAttrs: {
   pname = "meshtasticd";
-  version = "2.7.15.567b8ea";
+  version = "2.7.22.96dd647";
 
   # CI build number from release filename (not derivable from version tag)
-  passthru.buildNumber = "21107";
+  passthru.buildNumber = "26470";
 
   src = let
     # version = X.Y.Z.hash, extract parts
@@ -37,7 +37,7 @@ stdenv.mkDerivation (finalAttrs: {
     shortHash = lib.elemAt versionParts 3;
   in fetchzip {
     url = "https://github.com/meshtastic/firmware/releases/download/v${finalAttrs.version}/meshtasticd-${majorMinorPatch}.${finalAttrs.passthru.buildNumber}.local${shortHash}-src.zip";
-    hash = "sha256-j6t+j/rccJomXikDA7LK+I/EScSHfh5AlCTCSw8JRsQ=";
+    hash = "sha256-5d091de1e8dfe296ff08d680e4b09fcee64fa49936e6a1c024ef54fe7536bba0=";
     stripRoot = false;
   };
 

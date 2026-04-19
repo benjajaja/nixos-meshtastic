@@ -15,7 +15,7 @@
 }:
 
 let
-  version = "2.7.15.567b8ea";
+  version = "2.7.22.96dd647";
 
   # Extract version parts
   versionParts = lib.splitString "." version;
@@ -23,7 +23,7 @@ let
   shortHash = lib.elemAt versionParts 3;
 
   # CI build number (from release filename)
-  buildNumber = "21107";
+  buildNumber = "26470";
 
   # Determine platform from board name
   platform =
@@ -38,7 +38,7 @@ in stdenv.mkDerivation {
 
   src = fetchzip {
     url = "https://github.com/meshtastic/firmware/releases/download/v${version}/meshtasticd-${majorMinorPatch}.${buildNumber}.local${shortHash}-src.zip";
-    hash = "sha256-j6t+j/rccJomXikDA7LK+I/EScSHfh5AlCTCSw8JRsQ=";
+    hash = "sha256-5d091de1e8dfe296ff08d680e4b09fcee64fa49936e6a1c024ef54fe7536bba0=";
     stripRoot = false;
   };
 

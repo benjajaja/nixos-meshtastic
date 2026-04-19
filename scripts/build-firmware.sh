@@ -18,10 +18,10 @@
 set -euo pipefail
 
 BOARD="seeed-xiao-s3"
-HARDWARE_MODEL="RESERVED_FRIED_CHICKEN"
+HARDWARE_MODEL="MUZI_BASE"
 BATTERY_PIN="2"
 ADC_MULTIPLIER="2.0"
-VERSION="2.7.15.567b8ea"
+VERSION="2.7.22.96dd647"
 CLEAN=false
 
 # Parse arguments
@@ -41,7 +41,7 @@ done
 echo "=== Custom Meshtastic Firmware Builder ==="
 echo "Board: $BOARD"
 echo "Version: $VERSION"
-echo "Hardware Model: $HARDWARE_MODEL (Muzi Base)"
+echo "Hardware Model: $HARDWARE_MODEL"
 echo "Battery Pin: GPIO$BATTERY_PIN (ADC multiplier: $ADC_MULTIPLIER)"
 echo "Internal Temp: Enabled"
 echo ""
@@ -93,7 +93,7 @@ echo "Battery sensing configured:"
 grep -E "BATTERY_PIN|ADC_CHANNEL|ADC_MULTIPLIER" "$VARIANT_DIR/variant.h"
 
 # ============================================
-# PATCH 2: Hardware model to FRIED_CHICKEN
+# PATCH 2: Hardware model to MUZI_BASE
 # ============================================
 echo ""
 echo "Applying patch: Hardware model -> $HARDWARE_MODEL..."
